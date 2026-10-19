@@ -1,0 +1,6 @@
+{
+  "name": "Satit Annual Ticketing System",
+  "description": "ระบบจองโต๊ะ จำหน่ายบัตร และบริหารจัดการงานเลี้ยงประจำปี โรงเรียนสาธิตอุดมศึกษา (Satit Udomseuksa School)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
