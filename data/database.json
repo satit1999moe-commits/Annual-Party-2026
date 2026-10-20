@@ -57,37 +57,6 @@
       "check_in_status": false,
       "updated_at": "2026-10-19 13:06:22",
       "updated_by": "เจ้าหน้าที่การเงิน"
-    },
-    {
-      "booking_uuid": "test_unpaid_expired",
-      "booking_code": "9999",
-      "event_id": "EV2026",
-      "parent_first_name": "ทดสอบ",
-      "parent_last_name": "หลุดจอง",
-      "phone": "0811111111",
-      "email": "",
-      "contact_note": "",
-      "student_first_name": "เด็กชายเอ",
-      "student_last_name": "หลุดจอง",
-      "level_id": "P1",
-      "level_name": "Primary 1",
-      "room": "A",
-      "program": "TP",
-      "table_number": 10,
-      "seat_count": 1,
-      "seat_labels": [
-        "A"
-      ],
-      "is_whole_table": false,
-      "booking_status": "Confirmed",
-      "payment_status": "รอการชำระเงิน",
-      "total_amount": 850,
-      "slip_file_url": "",
-      "notes": "",
-      "created_by": "Test",
-      "created_at": "2026-10-19 08:06:33",
-      "qr_token": "test-token",
-      "check_in_status": false
     }
   ],
   "seats": [
@@ -601,9 +570,8 @@
       "event_id": "EV2026",
       "table_number": 10,
       "seat_label": "A",
-      "seat_status": "Booked",
-      "updated_at": "2026-10-13 14:59:00",
-      "booking_uuid": "test_unpaid_expired"
+      "seat_status": "Available",
+      "updated_at": "2026-10-20 12:24:49"
     },
     {
       "event_id": "EV2026",
@@ -7101,6 +7069,19 @@
   ],
   "auditLogs": [
     {
+      "log_id": "LOG_1792499089611_31wr",
+      "event_id": "EV2026",
+      "booking_uuid": "test_unpaid_expired",
+      "booking_code": "9999",
+      "action": "AUTO_CANCEL_EXPIRED_PAYMENT",
+      "old_value": "รอการชำระเงิน (เกิน 4 ชม.)",
+      "new_value": "หลุดจองอัตโนมัติ (คืนที่นั่งว่าง)",
+      "actor_id": "SYSTEM_EXPIRY",
+      "actor_name": "ระบบตรวจสอบเวลาชำระเงิน 4 ชั่วโมง",
+      "timestamp": "2026-10-20 12:24:49",
+      "reason": "เกินกำหนดระยะเวลาชำระเงิน 4 ชั่วโมง ระบบยกเลิกและปล่อยที่นั่งคืนสู่สถานะว่างทันที"
+    },
+    {
       "log_id": "LOG_1792415182641",
       "event_id": "EV2026",
       "booking_uuid": "b_1792415173328_ai9foea",
@@ -7374,7 +7355,7 @@
     },
     {
       "setting_key": "GOOGLE_SHEETS_LAST_SYNC",
-      "setting_value": "2026-10-19 13:06:13",
+      "setting_value": "2026-10-20 12:24:49",
       "updated_by": "Sync Engine",
       "updated_at": "2026-10-13 12:30:34"
     },

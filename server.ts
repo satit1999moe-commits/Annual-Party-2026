@@ -244,18 +244,29 @@ function getInitialDatabase(): DatabaseSchema {
 
 // Ensure database file exists
 function loadDatabase(): DatabaseSchema {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('Could not create DATA_DIR:', err);
   }
 
   if (!fs.existsSync(DB_FILE)) {
-    const bundledDbFile = path.resolve(__dirname, 'data', 'database.json');
-    if (fs.existsSync(bundledDbFile)) {
-      try {
-        const raw = fs.readFileSync(bundledDbFile, 'utf-8');
-        fs.writeFileSync(DB_FILE, raw, 'utf-8');
-      } catch (e) {
-        console.warn('Could not copy bundled database:', e);
+    const candidates = [
+      path.resolve(process.cwd(), 'data', 'database.json'),
+      path.resolve(__dirname, 'data', 'database.json'),
+      path.resolve(__dirname, '..', 'data', 'database.json'),
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) {
+        try {
+          const raw = fs.readFileSync(c, 'utf-8');
+          fs.writeFileSync(DB_FILE, raw, 'utf-8');
+          break;
+        } catch (e) {
+          console.warn('Could not copy bundled database:', e);
+        }
       }
     }
   }
@@ -263,7 +274,9 @@ function loadDatabase(): DatabaseSchema {
   if (!fs.existsSync(DB_FILE)) {
     const initial = getInitialDatabase();
     reconcileSeats(initial);
-    fs.writeFileSync(DB_FILE, JSON.stringify(initial, null, 2), 'utf-8');
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify(initial, null, 2), 'utf-8');
+    } catch {}
     return initial;
   }
 
@@ -457,14 +470,108 @@ function reconcileSeats(database: DatabaseSchema, targetEventId?: string) {
 }
 
 function saveDatabase(database: DatabaseSchema) {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
   reconcileSeats(database);
-  fs.writeFileSync(DB_FILE, JSON.stringify(database, null, 2), 'utf-8');
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(DB_FILE, JSON.stringify(database, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Could not write database file (read-only filesystem):', err);
+  }
 }
 
 let db: DatabaseSchema;
+
+// =========================================================================
+// Pull & Restore Live Bookings from Google Sheets GVIZ API (Persistent Cloud Sync)
+// =========================================================================
+export async function syncFromGoogleSheets(targetDb: DatabaseSchema): Promise<boolean> {
+  if (!targetDb || !Array.isArray(targetDb.bookings)) return false;
+  try {
+    const sheetId = '181fGpCP7KkKNMixR2OwmYew51wO-pyf2H8ERaKWTuaw';
+    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=Bookings`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return false;
+    const text = await res.text();
+    const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);/);
+    if (!match) return false;
+    const json = JSON.parse(match[1]);
+    const cols: string[] = json.table.cols.map((c: any) => c.label || c.id);
+    const rows = json.table.rows;
+    if (!Array.isArray(rows) || rows.length === 0) return false;
+
+    let modified = false;
+    for (const r of rows) {
+      const rowData: Record<string, any> = {};
+      r.c.forEach((cell: any, idx: number) => {
+        const colName = cols[idx];
+        if (colName) {
+          rowData[colName] = cell ? (cell.f !== undefined ? cell.f : cell.v) : null;
+        }
+      });
+
+      if (!rowData.booking_uuid || rowData.booking_uuid === 'test_unpaid_expired') continue;
+
+      const existingIdx = targetDb.bookings.findIndex((b) => b.booking_uuid === rowData.booking_uuid);
+      const seatLabels = rowData.seat_labels
+        ? String(rowData.seat_labels)
+            .split(';')
+            .map((s) => s.trim().toUpperCase())
+            .filter(Boolean)
+        : [];
+
+      const bookingObj: Booking = {
+        booking_uuid: String(rowData.booking_uuid),
+        booking_code: String(rowData.booking_code || '').padStart(4, '0'),
+        event_id: String(rowData.event_id || 'EV2026'),
+        parent_first_name: String(rowData.parent_first_name || ''),
+        parent_last_name: String(rowData.parent_last_name || ''),
+        phone: String(rowData.phone || ''),
+        email: rowData.email ? String(rowData.email) : '',
+        contact_note: rowData.contact_note ? String(rowData.contact_note) : '',
+        student_first_name: String(rowData.student_first_name || ''),
+        student_last_name: String(rowData.student_last_name || ''),
+        level_id: String(rowData.level_id || 'P1'),
+        level_name: String(rowData.level_name || 'Primary 1'),
+        room: String(rowData.room || 'A'),
+        program: rowData.program === 'EP' ? 'EP' : 'TP',
+        table_number: Number(rowData.table_number) || 1,
+        seat_count: Number(rowData.seat_count) || seatLabels.length,
+        seat_labels: seatLabels,
+        is_whole_table: String(rowData.is_whole_table).toUpperCase() === 'YES',
+        booking_status: (rowData.booking_status as any) || 'Confirmed',
+        payment_status: (rowData.payment_status as any) || 'ชำระเงินแล้ว',
+        total_amount: Number(rowData.total_amount) || 0,
+        slip_file_url: rowData.slip_file_url ? String(rowData.slip_file_url) : '',
+        notes: rowData.notes ? String(rowData.notes) : '',
+        created_by: String(rowData.created_by || 'Admin'),
+        created_at: String(rowData.created_at || new Date().toISOString().replace('T', ' ').slice(0, 19)),
+        updated_by: rowData.updated_by ? String(rowData.updated_by) : undefined,
+        updated_at: rowData.updated_at ? String(rowData.updated_at) : undefined,
+        cancelled_at: rowData.cancelled_at ? String(rowData.cancelled_at) : undefined,
+        cancellation_reason: rowData.cancellation_reason ? String(rowData.cancellation_reason) : undefined,
+      };
+
+      if (existingIdx === -1) {
+        targetDb.bookings.push(bookingObj);
+        modified = true;
+      } else {
+        targetDb.bookings[existingIdx] = { ...targetDb.bookings[existingIdx], ...bookingObj };
+      }
+    }
+
+    if (modified) {
+      reconcileSeats(targetDb);
+      saveDatabase(targetDb);
+      console.log(`[Google Sheets] Restored/Synced ${targetDb.bookings.length} permanent bookings from Google Sheets`);
+    }
+    return true;
+  } catch (err: any) {
+    console.warn('[Google Sheets] Non-blocking pull note:', err?.message || err);
+    return false;
+  }
+}
 
 // =========================================================================
 // Real-time Instant Background Synchronization to Google Sheets (Auto-Sync)
@@ -474,6 +581,13 @@ let pendingSyncRequested = false;
 
 async function triggerInstantGoogleSheetsSync(reason: string = 'Mutation') {
   if (!db || !db.settings) return;
+
+  // CRITICAL PROTECTION: Never clear Google Sheets if local bookings is empty unless explicit admin CLEAR_ALL_BOOKINGS
+  if (db.bookings.length === 0 && reason !== 'CLEAR_ALL_BOOKINGS') {
+    console.warn('[Auto-Sync] Skipped full_sync: db.bookings is empty and reason is not CLEAR_ALL_BOOKINGS (preventing accidental wipe)');
+    return;
+  }
+
   if (isSyncingInBackground) {
     pendingSyncRequested = true;
     return;
@@ -497,6 +611,7 @@ async function triggerInstantGoogleSheetsSync(reason: string = 'Mutation') {
     const resp = await fetch(webAppUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(4000),
       body: JSON.stringify({
         action: 'full_sync',
         syncReason: reason,
@@ -535,77 +650,6 @@ async function triggerInstantGoogleSheetsSync(reason: string = 'Mutation') {
       setTimeout(() => triggerInstantGoogleSheetsSync('QueuedMutation'), 1000);
     }
   }
-}
-
-// =========================================================================
-// Automatic 4-Hour Payment Expiry Checker (หลุดจองอัตโนมัติหากไม่ชำระใน 4 ชม.)
-// =========================================================================
-function autoExpireUnpaidBookings(database: DatabaseSchema): boolean {
-  if (!database || !Array.isArray(database.bookings)) return false;
-  const now = Date.now();
-  const FOUR_HOURS_MS = 4 * 60 * 60 * 1000; // 4 hours in milliseconds
-  let changed = false;
-
-  for (const b of database.bookings) {
-    if (b.booking_status !== 'Cancelled') {
-      const isUnpaid =
-        b.payment_status === 'รอการชำระเงิน' ||
-        b.payment_status === 'รอชำระเงิน' ||
-        b.payment_status === 'รอตรวจสอบ' ||
-        b.payment_status === 'ส่งหลักฐานแล้ว';
-
-      if (isUnpaid && b.payment_status !== 'ชำระเงินแล้ว') {
-        const createdAtTime = new Date(b.created_at).getTime();
-        if (!isNaN(createdAtTime) && (now - createdAtTime) > FOUR_HOURS_MS) {
-          const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
-          b.booking_status = 'Cancelled';
-          b.cancelled_at = nowStr;
-          b.cancellation_reason = 'หมดเวลาชำระเงินเกิน 4 ชั่วโมง (หลุดจองอัตโนมัติและคืนที่นั่ง)';
-          b.updated_at = nowStr;
-          b.updated_by = 'ระบบอัตโนมัติ (หมดเวลาชำระเงิน 4 ชม.)';
-          changed = true;
-
-          // Free seats atomically
-          if (Array.isArray(database.seats)) {
-            for (const s of database.seats) {
-              if (s.booking_uuid === b.booking_uuid) {
-                s.seat_status = 'Available';
-                delete s.booking_uuid;
-                s.updated_at = nowStr;
-              }
-            }
-          }
-
-          if (!Array.isArray(database.auditLogs)) database.auditLogs = [];
-          database.auditLogs.unshift({
-            log_id: `LOG_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-            event_id: b.event_id,
-            booking_uuid: b.booking_uuid,
-            booking_code: b.booking_code,
-            action: 'AUTO_CANCEL_EXPIRED_PAYMENT',
-            old_value: `${b.payment_status} (เกิน 4 ชม.)`,
-            new_value: 'หลุดจองอัตโนมัติ (คืนที่นั่งว่าง)',
-            actor_id: 'SYSTEM_EXPIRY',
-            actor_name: 'ระบบตรวจสอบเวลาชำระเงิน 4 ชั่วโมง',
-            timestamp: nowStr,
-            reason: 'เกินกำหนดระยะเวลาชำระเงิน 4 ชั่วโมง ระบบยกเลิกและปล่อยที่นั่งคืนสู่สถานะว่างทันที',
-          });
-        }
-      }
-    }
-  }
-
-  if (changed) {
-    reconcileSeats(database);
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    fs.writeFileSync(DB_FILE, JSON.stringify(database, null, 2), 'utf-8');
-    triggerInstantGoogleSheetsSync('AUTO_EXPIRE_UNPAID');
-    console.log('[Expiry-Engine] Released expired bookings exceeding 4-hour payment window');
-  }
-
-  return changed;
 }
 
 // Helper: atomic booking code generation
@@ -758,12 +802,10 @@ export function createApiApp(): express.Express {
 
   // Initialize DB
   db = loadDatabase();
-  autoExpireUnpaidBookings(db);
-
-  // Periodic sweep every 30 seconds for 4-hour payment expiration
-  setInterval(() => {
-    if (db) autoExpireUnpaidBookings(db);
-  }, 30 * 1000);
+  // Pull from Google Sheets in background if empty to restore any bookings
+  if (db.bookings.length === 0) {
+    syncFromGoogleSheets(db).catch(() => {});
+  }
 
   // ----------------------------------------------------
   // REST API Routes
