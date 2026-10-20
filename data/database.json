@@ -57,6 +57,38 @@
       "check_in_status": false,
       "updated_at": "2026-10-19 13:06:22",
       "updated_by": "เจ้าหน้าที่การเงิน"
+    },
+    {
+      "booking_uuid": "b_1792500275656_evf4pbf",
+      "booking_code": "0006",
+      "event_id": "EV2026",
+      "parent_first_name": "สมชาย",
+      "parent_last_name": "ใจดี",
+      "phone": "0812345678",
+      "email": "",
+      "contact_note": "",
+      "student_first_name": "เด็กชายวิน",
+      "student_last_name": "ใจดี",
+      "level_id": "P1",
+      "level_name": "Primary 1",
+      "room": "A",
+      "program": "TP",
+      "table_number": 1,
+      "seat_count": 2,
+      "seat_labels": [
+        "A",
+        "B"
+      ],
+      "is_whole_table": false,
+      "booking_status": "Confirmed",
+      "payment_status": "รอการชำระเงิน",
+      "total_amount": 1700,
+      "slip_file_url": "",
+      "notes": "",
+      "created_by": "Staff Test",
+      "created_at": "2026-10-20 12:44:35",
+      "qr_token": "satit-EV2026-0006-2jv8qt",
+      "check_in_status": false
     }
   ],
   "seats": [
@@ -64,15 +96,17 @@
       "event_id": "EV2026",
       "table_number": 1,
       "seat_label": "A",
-      "seat_status": "Available",
-      "updated_at": "2026-10-19 12:39:00"
+      "seat_status": "Booked",
+      "updated_at": "2026-10-20 12:44:35",
+      "booking_uuid": "b_1792500275656_evf4pbf"
     },
     {
       "event_id": "EV2026",
       "table_number": 1,
       "seat_label": "B",
-      "seat_status": "Available",
-      "updated_at": "2026-10-19 12:39:00"
+      "seat_status": "Booked",
+      "updated_at": "2026-10-20 12:44:35",
+      "booking_uuid": "b_1792500275656_evf4pbf"
     },
     {
       "event_id": "EV2026",
@@ -121,14 +155,14 @@
       "table_number": 2,
       "seat_label": "A",
       "seat_status": "Available",
-      "updated_at": "2026-10-13 14:59:00"
+      "updated_at": "2026-10-20 12:49:47"
     },
     {
       "event_id": "EV2026",
       "table_number": 2,
       "seat_label": "B",
       "seat_status": "Available",
-      "updated_at": "2026-10-13 14:59:00"
+      "updated_at": "2026-10-20 12:49:47"
     },
     {
       "event_id": "EV2026",
@@ -7069,6 +7103,43 @@
   ],
   "auditLogs": [
     {
+      "log_id": "LOG_1792500587573",
+      "event_id": "EV2026",
+      "booking_uuid": "b_1792500540198_yabiddu",
+      "booking_code": "0007",
+      "action": "DELETE_BOOKING",
+      "old_value": "โต๊ะ 2 (A, B) โดย ทดสอบ ระบบจอง",
+      "new_value": "DELETED",
+      "actor_id": "Admin",
+      "actor_name": "Admin",
+      "timestamp": "2026-10-20 12:49:47",
+      "reason": "Test cleanup"
+    },
+    {
+      "log_id": "LOG_1792500540199",
+      "event_id": "EV2026",
+      "booking_uuid": "b_1792500540198_yabiddu",
+      "booking_code": "0007",
+      "action": "CREATE_BOOKING",
+      "new_value": "โต๊ะ 2 (A, B) รวม 1,700 บาท",
+      "actor_id": "Super Admin",
+      "actor_name": "Super Admin",
+      "timestamp": "2026-10-20 12:49:00",
+      "reason": "สร้างรายการจองรหัส 0007 สำเร็จ"
+    },
+    {
+      "log_id": "LOG_1792500275657",
+      "event_id": "EV2026",
+      "booking_uuid": "b_1792500275656_evf4pbf",
+      "booking_code": "0006",
+      "action": "CREATE_BOOKING",
+      "new_value": "โต๊ะ 1 (A, B) รวม 1,700 บาท",
+      "actor_id": "Staff Test",
+      "actor_name": "Staff Test",
+      "timestamp": "2026-10-20 12:44:35",
+      "reason": "สร้างรายการจองรหัส 0006 สำเร็จ"
+    },
+    {
       "log_id": "LOG_1792499089611_31wr",
       "event_id": "EV2026",
       "booking_uuid": "test_unpaid_expired",
@@ -7373,6 +7444,6 @@
     }
   ],
   "sequenceCounters": {
-    "EV2026": 5
+    "EV2026": 7
   }
 }

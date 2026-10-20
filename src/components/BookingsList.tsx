@@ -535,36 +535,6 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                               b.payment_status === 'รอชำระเงิน' ||
                               b.payment_status !== 'ชำระเงินแล้ว') && (
                               <div className="flex flex-col items-center mt-1">
-                                {(() => {
-                                  const cd = getPaymentCountdown(b.created_at, 4);
-                                  if (cd.isExpired) {
-                                    return (
-                                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
-                                        <AlertCircle className="w-2.5 h-2.5 text-rose-500 shrink-0" />
-                                        <span>{lang === 'th' ? 'หมดเวลา (หลุดจอง)' : 'Expired'}</span>
-                                      </span>
-                                    );
-                                  }
-                                  return (
-                                    <span
-                                      className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                                        cd.remainingHours < 1
-                                          ? 'text-rose-700 bg-rose-50 border border-rose-200 animate-pulse'
-                                          : 'text-amber-800 bg-amber-50 border border-amber-200'
-                                      }`}
-                                      title={
-                                        lang === 'th'
-                                          ? 'หากไม่ชำระภายใน 4 ชั่วโมง ที่นั่งจะหลุดจองอัตโนมัติ'
-                                          : '4-hour payment window'
-                                      }
-                                    >
-                                      <Clock className="w-2.5 h-2.5 shrink-0" />
-                                      <span>
-                                        {lang === 'th' ? `เหลือ ${cd.formattedTh}` : `Left ${cd.formattedEn}`}
-                                      </span>
-                                    </span>
-                                  );
-                                })()}
 
                                 {/* Action to change status from รอชำระเงิน to ชำระเงินแล้ว */}
                                 <button

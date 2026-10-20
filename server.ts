@@ -551,6 +551,7 @@ export async function syncFromGoogleSheets(targetDb: DatabaseSchema): Promise<bo
         updated_at: rowData.updated_at ? String(rowData.updated_at) : undefined,
         cancelled_at: rowData.cancelled_at ? String(rowData.cancelled_at) : undefined,
         cancellation_reason: rowData.cancellation_reason ? String(rowData.cancellation_reason) : undefined,
+        qr_token: rowData.qr_token ? String(rowData.qr_token) : `SATIT_${rowData.booking_code || 'BK26'}_QR`,
       };
 
       if (existingIdx === -1) {
@@ -935,18 +936,22 @@ export function createApiApp(): express.Express {
   });
 
   // Seats map
-  app.get('/api/seats', (req: Request, res: Response) => {
+  app.get('/api/seats', async (req: Request, res: Response) => {
     const eventId = (req.query.eventId as string) || db.events[0]?.event_id || 'EV2026';
-    autoExpireUnpaidBookings(db);
+    if (db.bookings.length === 0) {
+      await syncFromGoogleSheets(db);
+    }
     reconcileSeats(db, eventId);
     const seats = db.seats.filter((s) => s.event_id === eventId);
     res.json(seats);
   });
 
   // Bookings list
-  app.get('/api/bookings', (req: Request, res: Response) => {
+  app.get('/api/bookings', async (req: Request, res: Response) => {
     const eventId = (req.query.eventId as string) || db.events[0]?.event_id || 'EV2026';
-    autoExpireUnpaidBookings(db);
+    if (db.bookings.length === 0) {
+      await syncFromGoogleSheets(db);
+    }
     reconcileSeats(db, eventId);
     let results = db.bookings.filter((b) => b.event_id === eventId);
 
@@ -1005,7 +1010,6 @@ export function createApiApp(): express.Express {
 
   // CREATE BOOKING (CRITICAL: Atomic 4-digit code generation + Seat Conflict Prevention)
   app.post('/api/bookings', (req: Request, res: Response) => {
-    autoExpireUnpaidBookings(db);
     const {
       event_id,
       parent_first_name,
@@ -2658,8 +2662,18 @@ export async function startServer() {
   });
 }
 
-// Start server if run directly
-startServer().catch((err) => {
-  console.error('Fatal error starting server:', err);
-  process.exit(1);
-});
+// Only start standalone server if run directly (e.g. tsx server.ts or node server.js)
+// When imported as a module in Vercel serverless function (api/index.ts), NEVER call startServer()
+const isMainModule = Boolean(
+  process.argv[1] &&
+  (process.argv[1].endsWith('server.ts') || process.argv[1].endsWith('server.js')) &&
+  !process.env.VERCEL &&
+  !process.env.NOW_REGION
+);
+
+if (isMainModule) {
+  startServer().catch((err) => {
+    console.error('Fatal error starting server:', err);
+    process.exit(1);
+  });
+}

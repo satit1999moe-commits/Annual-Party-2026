@@ -1,5 +1,10 @@
 import { createApiApp } from '../server';
 
-const app = createApiApp();
+let cachedApp: any = null;
 
-export default app;
+export default function handler(req: any, res: any) {
+  if (!cachedApp) {
+    cachedApp = createApiApp();
+  }
+  return cachedApp(req, res);
+}

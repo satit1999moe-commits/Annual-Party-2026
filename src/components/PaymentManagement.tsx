@@ -318,29 +318,7 @@ export const PaymentManagement: React.FC<PaymentManagementProps> = ({
                             {getPaymentStatusBadgeLabel(b.payment_status)}
                           </span>
 
-                          {b.payment_status !== 'ชำระเงินแล้ว' && (() => {
-                            const cd = getPaymentCountdown(b.created_at, 4);
-                            if (cd.isExpired) {
-                              return (
-                                <span className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
-                                  <AlertCircle className="w-2.5 h-2.5 text-rose-500 shrink-0" />
-                                  <span>{lang === 'th' ? 'หมดเวลา (หลุดจอง)' : 'Expired'}</span>
-                                </span>
-                              );
-                            }
-                            return (
-                              <span
-                                className={`mt-1 inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                                  cd.remainingHours < 1
-                                    ? 'text-rose-700 bg-rose-50 border border-rose-200 animate-pulse'
-                                    : 'text-amber-800 bg-amber-50 border border-amber-200'
-                                }`}
-                              >
-                                <Clock className="w-2.5 h-2.5 shrink-0" />
-                                <span>{lang === 'th' ? `เหลือ ${cd.formattedTh}` : `Left ${cd.formattedEn}`}</span>
-                              </span>
-                            );
-                          })()}
+
                         </div>
                       </td>
 

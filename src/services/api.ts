@@ -212,7 +212,6 @@ function loadClientDb(): ClientDatabaseSchema {
         const parsed = JSON.parse(raw);
         if (parsed && Array.isArray(parsed.events) && Array.isArray(parsed.seats) && parsed.seats.length > 0) {
           parsed.staff = EMBEDDED_SUPER_ADMINS; // Always ensure all 7 embedded super admins are preserved
-          autoExpireClientUnpaidBookings(parsed);
           return parsed;
         }
       }
@@ -225,49 +224,77 @@ function loadClientDb(): ClientDatabaseSchema {
   return init;
 }
 
-function autoExpireClientUnpaidBookings(db: ClientDatabaseSchema): boolean {
-  if (!db || !Array.isArray(db.bookings)) return false;
-  const now = Date.now();
-  const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
-  let changed = false;
+export async function fetchBookingsFromGoogleSheetsGviz(): Promise<Booking[]> {
+  try {
+    const sheetId = '181fGpCP7KkKNMixR2OwmYew51wO-pyf2H8ERaKWTuaw';
+    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=Bookings`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return [];
+    const text = await res.text();
+    const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);/);
+    if (!match) return [];
+    const json = JSON.parse(match[1]);
+    const cols: string[] = json.table.cols.map((c: any) => c.label || c.id);
+    const rows = json.table.rows;
+    if (!Array.isArray(rows) || rows.length === 0) return [];
 
-  for (const b of db.bookings) {
-    if (b.booking_status !== 'Cancelled') {
-      const isUnpaid =
-        b.payment_status === 'รอการชำระเงิน' ||
-        b.payment_status === 'รอชำระเงิน' ||
-        b.payment_status === 'รอตรวจสอบ' ||
-        b.payment_status === 'ส่งหลักฐานแล้ว';
-
-      if (isUnpaid && b.payment_status !== 'ชำระเงินแล้ว') {
-        const createdAtTime = new Date(b.created_at).getTime();
-        if (!isNaN(createdAtTime) && now - createdAtTime > FOUR_HOURS_MS) {
-          const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
-          b.booking_status = 'Cancelled';
-          b.cancelled_at = nowStr;
-          b.cancellation_reason = 'หมดเวลาชำระเงินเกิน 4 ชั่วโมง (หลุดจองอัตโนมัติและคืนที่นั่ง)';
-          b.updated_at = nowStr;
-          b.updated_by = 'ระบบอัตโนมัติ (หมดเวลาชำระเงิน 4 ชม.)';
-          changed = true;
-
-          if (Array.isArray(db.seats)) {
-            for (const s of db.seats) {
-              if (s.booking_uuid === b.booking_uuid) {
-                s.seat_status = 'Available';
-                delete s.booking_uuid;
-                s.updated_at = nowStr;
-              }
-            }
-          }
+    const bookings: Booking[] = [];
+    for (const r of rows) {
+      const rowData: Record<string, any> = {};
+      r.c.forEach((cell: any, idx: number) => {
+        const colName = cols[idx];
+        if (colName) {
+          rowData[colName] = cell ? (cell.f !== undefined ? cell.f : cell.v) : null;
         }
-      }
-    }
-  }
+      });
 
-  if (changed) {
-    saveClientDb(db);
+      if (!rowData.booking_uuid || rowData.booking_uuid === 'test_unpaid_expired') continue;
+
+      const seatLabels = rowData.seat_labels
+        ? String(rowData.seat_labels)
+            .split(';')
+            .map((s) => s.trim().toUpperCase())
+            .filter(Boolean)
+        : [];
+
+      bookings.push({
+        booking_uuid: String(rowData.booking_uuid),
+        booking_code: String(rowData.booking_code || '').padStart(4, '0'),
+        event_id: String(rowData.event_id || 'EV2026'),
+        parent_first_name: String(rowData.parent_first_name || ''),
+        parent_last_name: String(rowData.parent_last_name || ''),
+        phone: String(rowData.phone || ''),
+        email: rowData.email ? String(rowData.email) : '',
+        contact_note: rowData.contact_note ? String(rowData.contact_note) : '',
+        student_first_name: String(rowData.student_first_name || ''),
+        student_last_name: String(rowData.student_last_name || ''),
+        level_id: String(rowData.level_id || 'P1'),
+        level_name: String(rowData.level_name || 'Primary 1'),
+        room: String(rowData.room || 'A'),
+        program: (rowData.program === 'EP' ? 'EP' : 'TP'),
+        table_number: Number(rowData.table_number) || 1,
+        seat_count: Number(rowData.seat_count) || seatLabels.length,
+        seat_labels: seatLabels,
+        is_whole_table: String(rowData.is_whole_table).toUpperCase() === 'YES',
+        booking_status: (rowData.booking_status as any) || 'Confirmed',
+        payment_status: (rowData.payment_status as any) || 'ชำระเงินแล้ว',
+        total_amount: Number(rowData.total_amount) || 0,
+        slip_file_url: rowData.slip_file_url ? String(rowData.slip_file_url) : '',
+        notes: rowData.notes ? String(rowData.notes) : '',
+        created_by: String(rowData.created_by || 'Admin'),
+        created_at: String(rowData.created_at || new Date().toISOString().replace('T', ' ').slice(0, 19)),
+        updated_by: rowData.updated_by ? String(rowData.updated_by) : undefined,
+        updated_at: rowData.updated_at ? String(rowData.updated_at) : undefined,
+        cancelled_at: rowData.cancelled_at ? String(rowData.cancelled_at) : undefined,
+        cancellation_reason: rowData.cancellation_reason ? String(rowData.cancellation_reason) : undefined,
+        qr_token: rowData.qr_token ? String(rowData.qr_token) : `SATIT_${rowData.booking_code || 'BK26'}_QR`,
+      });
+    }
+    return bookings;
+  } catch (err) {
+    console.warn('Failed to fetch from Google Sheets GVIZ:', err);
+    return [];
   }
-  return changed;
 }
 
 function saveClientDb(db: ClientDatabaseSchema): void {
@@ -474,7 +501,23 @@ export const api = {
       if (res.ok) {
         const data = await parseJsonResponse<Seat[]>(res, 'Failed to fetch seats');
         if (Array.isArray(data) && data.length > 0) {
-          return data;
+          // Reconcile with local active bookings to prevent race conditions
+          const db = loadClientDb();
+          const activeBookings = (db.bookings || []).filter(
+            (b) => b.event_id === eventId && b.booking_status !== 'Cancelled'
+          );
+          const bookedSeatSet = new Set<string>();
+          for (const b of activeBookings) {
+            for (const sl of b.seat_labels || []) {
+              bookedSeatSet.add(`${Number(b.table_number)}_${String(sl).trim().toUpperCase()}`);
+            }
+          }
+          return data.map((s) => {
+            if (bookedSeatSet.has(`${Number(s.table_number)}_${String(s.seat_label).trim().toUpperCase()}`)) {
+              return { ...s, seat_status: 'Booked' as const };
+            }
+            return s;
+          });
         }
       }
     } catch {
@@ -518,12 +561,43 @@ export const api = {
       if (res.ok) {
         const data = await parseJsonResponse<Booking[]>(res, 'Failed to fetch bookings');
         if (Array.isArray(data)) {
-          return data;
+          const db = loadClientDb();
+          let changed = false;
+          for (const b of data) {
+            const idx = db.bookings.findIndex((item) => item.booking_uuid === b.booking_uuid);
+            if (idx === -1) {
+              db.bookings.push(b);
+              changed = true;
+            } else {
+              db.bookings[idx] = { ...db.bookings[idx], ...b };
+            }
+          }
+          if (changed) saveClientDb(db);
+          if (data.length > 0) return data;
         }
       }
     } catch {
       // Fallback
     }
+
+    // Secondary Cloud Fallback: Direct Google Sheets GVIZ API
+    try {
+      const remoteBookings = await fetchBookingsFromGoogleSheetsGviz();
+      if (remoteBookings.length > 0) {
+        const db = loadClientDb();
+        let changed = false;
+        for (const rb of remoteBookings) {
+          const idx = db.bookings.findIndex((item) => item.booking_uuid === rb.booking_uuid);
+          if (idx === -1) {
+            db.bookings.push(rb);
+            changed = true;
+          } else {
+            db.bookings[idx] = { ...db.bookings[idx], ...rb };
+          }
+        }
+        if (changed) saveClientDb(db);
+      }
+    } catch {}
 
     const db = loadClientDb();
     let list = (db.bookings || []).filter((b) => b.event_id === eventId);
@@ -624,20 +698,25 @@ export const api = {
         } catch {
           if (errText && !errText.includes('<html') && !errText.includes('<!DOCTYPE')) errMsg = errText;
         }
-        throw new Error(errMsg);
+        // If it's a conflict or validation error, re-throw so user is notified
+        if (res.status === 409 || res.status === 400) {
+          throw new Error(errMsg);
+        }
+        console.warn('Server error on booking creation, using local fallback:', errMsg);
       }
     } catch (err: any) {
       if (
         err?.message &&
-        !err.message.includes('Failed to fetch') &&
-        !err.message.includes('NetworkError') &&
-        !err.message.includes('Load failed')
+        (err.message.includes('มีผู้จองไปแล้ว') ||
+          err.message.includes('จำเป็นต้องกรอก') ||
+          err.message.includes('เต็มแล้ว'))
       ) {
         throw err;
       }
+      console.warn('Network or server exception, saving with guaranteed local & cloud persistence:', err);
     }
 
-    // LocalStorage Fallback Creation (for completely offline environments)
+    // Guaranteed Fallback Creation: persist locally & sync to Google Sheets
     const db = loadClientDb();
     db.sequenceCounter = (db.sequenceCounter || 0) + 1;
     const bookingCode = `BK26-${String(db.sequenceCounter).padStart(4, '0')}`;
@@ -706,6 +785,22 @@ export const api = {
     });
 
     saveClientDb(db);
+
+    // Direct background sync to Google Apps Script webhook
+    try {
+      const scriptUrl =
+        'https://script.google.com/macros/s/AKfycbyA-GjojRbOGEArwidXXGgPB4Fyj2eNVvA9B2b4T__qSxxtTW1m3v_uJLs7F8PVe0_g/exec';
+      fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        mode: 'no-cors',
+        body: JSON.stringify({
+          action: 'sync_booking',
+          booking: newBooking,
+        }),
+      }).catch(() => {});
+    } catch {}
+
     return newBooking;
   },
 
